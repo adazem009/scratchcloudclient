@@ -51,6 +51,22 @@ void CloudClient::setVariable(const std::string &name, const std::string &value)
     impl->uploadVar(name, value);
 }
 
+/*! Sleeps until all variables in the queue are uploaded. */
+void CloudClient::waitForUpload()
+{
+    while (true) {
+        impl->uploadMutex.lock();
+
+        if (impl->uploadQueue.empty()) {
+            impl->uploadMutex.unlock();
+            return;
+        }
+
+        impl->uploadMutex.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+}
+
 /*! Emits when a variable was set by another user. */
 sigslot::signal<const std::string &, const std::string &> &CloudClient::variableSet()
 {

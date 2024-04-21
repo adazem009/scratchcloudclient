@@ -25,6 +25,7 @@ class SCRATCHCLOUDCLIENT_EXPORT CloudClient
 
         const std::string &getVariable(const std::string &name) const;
         void setVariable(const std::string &name, const std::string &value);
+        void waitForUpload();
 
         sigslot::signal<const std::string &, const std::string &> &variableSet();
 
