@@ -24,6 +24,7 @@ target_sources(scratchcloudclient
 
 target_compile_definitions(scratchcloudclient PRIVATE SCRATCHCLOUDCLIENT_LIBRARY)
 target_include_directories(scratchcloudclient PRIVATE ${INCLUDE_DIR})
+target_include_directories(scratchcloudclient PUBLIC include)
 
 # cpr
 include(FetchContent)
