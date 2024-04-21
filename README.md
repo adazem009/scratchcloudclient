@@ -4,9 +4,17 @@ A simple and easy to use C++ Scratch cloud data client.
 Based on [Cpp-ScratchClient](https://github.com/nini2009ph/Cpp-ScratchClient) by [nini2009ph](https://github.com/nini2009ph).
 
 # Using in a CMake project
+Using FetchContent:
+```cmake
+include(FetchContent)
+FetchContent_Declare(cloudclient GIT_REPOSITORY https://github.com/adazem009/scratchcloudclient.git GIT_TAG 54dfdf596e954cd789584da4400a34f142c27df6)
+FetchContent_MakeAvailable(cloudclient)
+target_link_libraries(MyApp PRIVATE scratchcloudclient)
+```
+
+Or if you cloned the repository (submodule, etc.):
 ```cmake
 add_subdirectory(scratchcloudclient)
-target_include_directories(MyApp PRIVATE scratchcloudclient/include)
 target_link_libraries(MyApp PRIVATE scratchcloudclient)
 ```
 
