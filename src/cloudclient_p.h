@@ -32,13 +32,15 @@ struct CloudClientPrivate
         std::string xToken;
         std::string csrfToken;
         std::string projectId;
+        int loginAttempts = 0;
         bool loginSuccessful = false;
         bool connected = false;
-        ix::WebSocket websocket;
+        std::unique_ptr<ix::WebSocket> websocket;
         std::thread connectionThread;
-        unsigned int reconnects = 0;
         std::chrono::steady_clock::time_point lastUpload;
         std::atomic<bool> stopConnectionThread = false;
+        std::atomic<bool> reconnect = false;
+        std::atomic<bool> ignoreMessages = false;
         std::mutex uploadMutex;
         std::vector<std::pair<std::string, std::string>> uploadQueue;
         std::unordered_map<std::string, std::string> variables;

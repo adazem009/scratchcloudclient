@@ -32,7 +32,9 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
 CloudClientPrivate::~CloudClientPrivate()
 {
     stopConnectionThread = true;
-    connectionThread.join();
+
+    if (connectionThread.joinable())
+        connectionThread.join();
 }
 
 void CloudClientPrivate::login()
@@ -50,8 +52,17 @@ void CloudClientPrivate::login()
     cpr::Response login_responce = cpr::Post(login_url, login_headers, login_body);
 
     if (login_responce.status_code != 200) {
-        std::cerr << "Incorrect username or password!" << std::endl;
-        return;
+        if (login_responce.status_code == 403) {
+            std::cerr << "Incorrect username or password!" << std::endl;
+            return;
+        } else {
+            loginAttempts++;
+
+            if (loginAttempts < 25)
+                login();
+
+            return;
+        }
     }
 
     std::smatch login_smatch;
@@ -60,6 +71,7 @@ void CloudClientPrivate::login()
     sessionId = login_smatch[0];
     xToken = nlohmann::json::parse(login_responce.text)[0]["token"];
     loginSuccessful = true;
+    loginAttempts = 0;
     return;
 }
 
@@ -81,25 +93,26 @@ void CloudClientPrivate::connect()
     if (!loginSuccessful)
         return;
 
-    reconnects = 0;
-    websocket.setUrl("wss://clouddata.scratch.mit.edu/");
+    reconnect = false;
 
-    websocket.setOnMessageCallback([&](const ix::WebSocketMessagePtr &msg) {
+    websocket = std::make_unique<ix::WebSocket>();
+    websocket->setUrl("wss://clouddata.scratch.mit.edu/");
+
+    websocket->setOnMessageCallback([&](const ix::WebSocketMessagePtr &msg) {
+        if (reconnect)
+            return;
+
         switch (msg->type) {
-            case ix::WebSocketMessageType::Open:
-                reconnects++;
-                break;
-
             case ix::WebSocketMessageType::Close:
-                if (reconnects > 2) {
-                    std::cerr << "error: could not reconnect" << std::endl;
-                    websocket.disableAutomaticReconnection();
-                }
+                reconnect = true;
                 break;
 
             case ix::WebSocketMessageType::Message: {
-                websocket.enableAutomaticReconnection();
-                reconnects = 0;
+                if (ignoreMessages) {
+                    ignoreMessages = false;
+                    return;
+                }
+
                 std::vector<std::string> response = splitStr(msg->str, "\n");
 
                 for (int i = 0; i < response.size() - 1; i++) {
@@ -122,19 +135,24 @@ void CloudClientPrivate::connect()
     extra_headers["cookie"] = "scratchsessionsid=" + sessionId + ";";
     extra_headers["origin"] = "https://scratch.mit.edu";
     extra_headers["enable_multithread"] = true;
-    websocket.setExtraHeaders(extra_headers);
+    websocket->setExtraHeaders(extra_headers);
+    websocket->disableAutomaticReconnection();
 
-    ix::WebSocketInitResult result = websocket.connect(5);
+    ix::WebSocketInitResult result = websocket->connect(5);
 
     if (!result.success) {
         std::cout << "failed to connect: " << result.errorStr << std::endl;
         return;
     }
 
-    websocket.start();
-    websocket.send("{\"method\":\"handshake\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
+    websocket->start();
+    websocket->send("{\"method\":\"handshake\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
 
     connected = true;
+
+    if (ignoreMessages)
+        return;
+
     int i = 0;
 
     while (variables.empty()) {
@@ -151,6 +169,14 @@ void CloudClientPrivate::connect()
 void CloudClientPrivate::uploadLoop()
 {
     while (!stopConnectionThread) {
+        if (reconnect) {
+            ignoreMessages = true;
+            websocket->close();
+            websocket.reset();
+            login();
+            connect();
+        }
+
         uploadMutex.lock();
 
         if (!uploadQueue.empty()) {
@@ -159,7 +185,7 @@ void CloudClientPrivate::uploadLoop()
             std::string value = first.second;
             uploadQueue.erase(uploadQueue.begin());
             uploadMutex.unlock();
-            websocket.send(u8"{ \"method\":\"set\", \"name\":\"☁ " + name + "\", \"value\":\"" + value + "\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
+            websocket->send(u8"{ \"method\":\"set\", \"name\":\"☁ " + name + "\", \"value\":\"" + value + "\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
 
             auto now = std::chrono::steady_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpload).count();
