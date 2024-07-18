@@ -24,7 +24,6 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     csrfToken = getCsrfToken();
     connectionThread = std::thread([&]() { connect(); });
     connectionThread.join();
-    lastUpload = std::chrono::steady_clock::now();
 
     connectionThread = std::thread([&]() { uploadLoop(); });
 }
@@ -179,32 +178,34 @@ void CloudClientPrivate::uploadLoop()
 
         uploadMutex.lock();
 
-        if (!uploadQueue.empty()) {
-            const auto &first = uploadQueue.front();
-            std::string name = first.first;
-            std::string value = first.second;
-            uploadQueue.erase(uploadQueue.begin());
-            uploadMutex.unlock();
-            websocket->send(u8"{ \"method\":\"set\", \"name\":\"☁ " + name + "\", \"value\":\"" + value + "\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
-
+        for (auto &[name, info] : uploadQueue) {
+            auto lastUpload = info.first;
+            auto &values = info.second;
             auto now = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpload).count();
+            auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpload).count();
 
-            if (duration < UPLOAD_WAIT_TIME)
-                std::this_thread::sleep_for(std::chrono::milliseconds(UPLOAD_WAIT_TIME - duration));
-
-            lastUpload = now;
-        } else {
-            uploadMutex.unlock();
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (delta >= UPLOAD_WAIT_TIME && !values.empty()) {
+                const std::string &value = values.front();
+                websocket->send(u8"{ \"method\":\"set\", \"name\":\"☁ " + name + "\", \"value\":\"" + value + "\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
+                values.erase(values.begin());
+                info.first = now;
+            }
         }
+
+        uploadMutex.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }
 
 void CloudClientPrivate::uploadVar(const std::string &name, const std::string &value)
 {
     uploadMutex.lock();
-    uploadQueue.push_back({ name, value });
+
+    if (uploadQueue.find(name) == uploadQueue.cend())
+        uploadQueue[name] = { TimePoint(), {} };
+
+    uploadQueue[name].second.push_back(value);
+
     uploadMutex.unlock();
 }
 

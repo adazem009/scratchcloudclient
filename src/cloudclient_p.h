@@ -13,6 +13,7 @@ namespace scratchcloud
 
 struct CloudClientPrivate
 {
+        using TimePoint = std::chrono::steady_clock::time_point;
         CloudClientPrivate(const std::string &username, const std::string &password, const std::string &projectId);
         CloudClientPrivate(const CloudClientPrivate &) = delete;
         ~CloudClientPrivate();
@@ -37,12 +38,11 @@ struct CloudClientPrivate
         bool connected = false;
         std::unique_ptr<ix::WebSocket> websocket;
         std::thread connectionThread;
-        std::chrono::steady_clock::time_point lastUpload;
         std::atomic<bool> stopConnectionThread = false;
         std::atomic<bool> reconnect = false;
         std::atomic<bool> ignoreMessages = false;
         std::mutex uploadMutex;
-        std::vector<std::pair<std::string, std::string>> uploadQueue;
+        std::unordered_map<std::string, std::pair<TimePoint, std::vector<std::string>>> uploadQueue;
         std::unordered_map<std::string, std::string> variables;
         sigslot::signal<const std::string &, const std::string &> variableSet;
 };

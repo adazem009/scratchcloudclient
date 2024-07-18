@@ -56,13 +56,20 @@ void CloudClient::waitForUpload()
 {
     while (true) {
         impl->uploadMutex.lock();
+        bool found = false;
 
-        if (impl->uploadQueue.empty()) {
-            impl->uploadMutex.unlock();
-            return;
+        for (const auto &[name, info] : impl->uploadQueue) {
+            if (!info.second.empty()) {
+                found = true;
+                break;
+            }
         }
 
         impl->uploadMutex.unlock();
+
+        if (!found)
+            return;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }
