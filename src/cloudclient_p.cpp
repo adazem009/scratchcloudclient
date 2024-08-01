@@ -21,7 +21,6 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     if (!loginSuccessful)
         return;
 
-    csrfToken = getCsrfToken();
     connectionThread = std::thread([&]() { connect(); });
     connectionThread.join();
 
@@ -72,17 +71,6 @@ void CloudClientPrivate::login()
     loginSuccessful = true;
     loginAttempts = 0;
     return;
-}
-
-std::string CloudClientPrivate::getCsrfToken() const
-{
-    cpr::Url csrf_token_url{ "https://scratch.mit.edu/csrf_token/" };
-    cpr::Response csrf_token_responce = cpr::Get(csrf_token_url);
-
-    std::smatch csrf_token_smatch;
-    std::regex_search(csrf_token_responce.raw_header, csrf_token_smatch, std::regex("scratchcsrftoken=(.*?);"));
-
-    return csrf_token_smatch[1];
 }
 
 void CloudClientPrivate::connect()

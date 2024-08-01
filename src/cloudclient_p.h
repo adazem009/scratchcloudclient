@@ -19,7 +19,6 @@ struct CloudClientPrivate
         ~CloudClientPrivate();
 
         void login();
-        std::string getCsrfToken() const;
 
         void connect();
         void uploadLoop();
@@ -31,7 +30,6 @@ struct CloudClientPrivate
         std::string password;
         std::string sessionId;
         std::string xToken;
-        std::string csrfToken;
         std::string projectId;
         int loginAttempts = 0;
         bool loginSuccessful = false;
