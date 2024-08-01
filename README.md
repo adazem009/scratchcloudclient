@@ -50,3 +50,9 @@ int main() {
 ```
 Please note that it's fine to call `setVariable()` multiple times without any delay because uploading happens in another thread
 where the messages are sent with a delay to avoid data loss.
+
+To be able to upload multiple variables simultaneously, multiple connections are used.
+You can pass the amount of them to the constructor. The default is **10**.
+```cpp
+CloudClient client("username", "password", "526557379", 4);
+```

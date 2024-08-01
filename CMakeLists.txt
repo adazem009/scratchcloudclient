@@ -20,6 +20,8 @@ target_sources(scratchcloudclient
     src/cloudclient.cpp
     src/cloudclient_p.cpp
     src/cloudclient_p.h
+    src/cloudconnection.cpp
+    src/cloudconnection.h
 )
 
 target_compile_definitions(scratchcloudclient PRIVATE SCRATCHCLOUDCLIENT_LIBRARY)

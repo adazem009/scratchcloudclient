@@ -17,7 +17,7 @@ class CloudClientPrivate;
 class SCRATCHCLOUDCLIENT_EXPORT CloudClient
 {
     public:
-        CloudClient(const std::string &username, const std::string &password, const std::string &projectId);
+        CloudClient(const std::string &username, const std::string &password, const std::string &projectId, int connections = 10);
         CloudClient(const CloudClient &) = delete;
 
         bool loginSuccessful() const;

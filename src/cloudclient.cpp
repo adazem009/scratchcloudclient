@@ -4,12 +4,13 @@
 
 #include "cloudclient.h"
 #include "cloudclient_p.h"
+#include "cloudconnection.h"
 
 using namespace scratchcloud;
 
 /*! Constructs CloudClient and connects to a project using Scratch username, password and project ID. */
-CloudClient::CloudClient(const std::string &username, const std::string &password, const std::string &projectId) :
-    impl(spimpl::make_unique_impl<CloudClientPrivate>(username, password, projectId))
+CloudClient::CloudClient(const std::string &username, const std::string &password, const std::string &projectId, int connections) :
+    impl(spimpl::make_unique_impl<CloudClientPrivate>(username, password, projectId, connections))
 {
 }
 
@@ -55,17 +56,14 @@ void CloudClient::setVariable(const std::string &name, const std::string &value)
 void CloudClient::waitForUpload()
 {
     while (true) {
-        impl->uploadMutex.lock();
         bool found = false;
 
-        for (const auto &[name, info] : impl->uploadQueue) {
-            if (!info.second.empty()) {
+        for (auto conn : impl->connections) {
+            if (conn->queueSize() > 0) {
                 found = true;
                 break;
             }
         }
-
-        impl->uploadMutex.unlock();
 
         if (!found)
             return;

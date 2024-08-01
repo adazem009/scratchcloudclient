@@ -6,12 +6,13 @@
 #include <nlohmann/json.hpp>
 
 #include "cloudclient_p.h"
+#include "cloudconnection.h"
 
-#define UPLOAD_WAIT_TIME 150
+#define MAX_LOGIN_ATTEMPTS 32
 
 using namespace scratchcloud;
 
-CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::string &password, const std::string &projectId) :
+CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::string &password, const std::string &projectId, int connections) :
     username(username),
     password(password),
     projectId(projectId)
@@ -21,22 +22,33 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     if (!loginSuccessful)
         return;
 
-    connectionThread = std::thread([&]() { connect(); });
-    connectionThread.join();
+    for (int i = 0; i < connections; i++) {
+        auto conn = std::make_shared<CloudConnection>(i, username, sessionId, projectId);
 
-    connectionThread = std::thread([&]() { uploadLoop(); });
-}
+        if (i == 0) {
+            // Use the first client's events
+            conn->variableSet().connect(&CloudClientPrivate::processEvent, this);
+        }
 
-CloudClientPrivate::~CloudClientPrivate()
-{
-    stopConnectionThread = true;
+        if (!conn->connected())
+            return;
 
-    if (connectionThread.joinable())
-        connectionThread.join();
+        this->connections.push_back(conn);
+    }
+
+    connected = true;
 }
 
 void CloudClientPrivate::login()
 {
+    if (attempt >= MAX_LOGIN_ATTEMPTS) {
+        std::cerr << "failed to log in after " << attempt << " attempts!" << std::endl;
+        return;
+    }
+
+    attempt++;
+    assert(attempt <= MAX_LOGIN_ATTEMPTS);
+    std::cout << "attempting to log in... (attempt " << attempt << " of " << MAX_LOGIN_ATTEMPTS << ")" << std::endl;
     loginSuccessful = false;
     cpr::Url login_url{ "https://scratch.mit.edu/login/" };
     cpr::Header login_headers{
@@ -54,11 +66,7 @@ void CloudClientPrivate::login()
             std::cerr << "Incorrect username or password!" << std::endl;
             return;
         } else {
-            loginAttempts++;
-
-            if (loginAttempts < 25)
-                login();
-
+            login();
             return;
         }
     }
@@ -69,146 +77,30 @@ void CloudClientPrivate::login()
     sessionId = login_smatch[0];
     xToken = nlohmann::json::parse(login_response.text)[0]["token"];
     loginSuccessful = true;
-    loginAttempts = 0;
+    attempt = 0;
+    std::cout << "success!" << std::endl;
     return;
-}
-
-void CloudClientPrivate::connect()
-{
-    connected = false;
-
-    if (!loginSuccessful)
-        return;
-
-    reconnect = false;
-
-    websocket = std::make_unique<ix::WebSocket>();
-    websocket->setUrl("wss://clouddata.scratch.mit.edu/");
-
-    websocket->setOnMessageCallback([&](const ix::WebSocketMessagePtr &msg) {
-        if (reconnect)
-            return;
-
-        switch (msg->type) {
-            case ix::WebSocketMessageType::Close:
-                reconnect = true;
-                break;
-
-            case ix::WebSocketMessageType::Message: {
-                if (ignoreMessages) {
-                    ignoreMessages = false;
-                    return;
-                }
-
-                std::vector<std::string> response = splitStr(msg->str, "\n");
-
-                for (int i = 0; i < response.size() - 1; i++) {
-                    response[i].erase(response[i].find(u8"☁ "), 4);
-                    nlohmann::json json = nlohmann::json::parse(response[i]);
-                    std::string name = json["name"];
-                    std::string value = json["value"];
-                    variables[name] = value;
-                    variableSet(name, value);
-                }
-                break;
-            }
-
-            default:
-                break;
-        }
-    });
-
-    ix::WebSocketHttpHeaders extra_headers;
-    extra_headers["cookie"] = "scratchsessionsid=" + sessionId + ";";
-    extra_headers["origin"] = "https://scratch.mit.edu";
-    extra_headers["enable_multithread"] = true;
-    websocket->setExtraHeaders(extra_headers);
-    websocket->disableAutomaticReconnection();
-
-    ix::WebSocketInitResult result = websocket->connect(5);
-
-    if (!result.success) {
-        std::cout << "failed to connect: " << result.errorStr << std::endl;
-        return;
-    }
-
-    websocket->start();
-    websocket->send("{\"method\":\"handshake\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
-
-    connected = true;
-
-    if (ignoreMessages)
-        return;
-
-    int i = 0;
-
-    while (variables.empty()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        i++;
-
-        if (i > 25)
-            return;
-    }
-
-    return;
-}
-
-void CloudClientPrivate::uploadLoop()
-{
-    while (!stopConnectionThread) {
-        if (reconnect) {
-            ignoreMessages = true;
-            websocket->close();
-            websocket.reset();
-            login();
-            connect();
-        }
-
-        uploadMutex.lock();
-
-        for (auto &[name, info] : uploadQueue) {
-            auto lastUpload = info.first;
-            auto &values = info.second;
-            auto now = std::chrono::steady_clock::now();
-            auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpload).count();
-
-            if (delta >= UPLOAD_WAIT_TIME && !values.empty()) {
-                const std::string &value = values.front();
-                websocket->send(u8"{ \"method\":\"set\", \"name\":\"☁ " + name + "\", \"value\":\"" + value + "\", \"user\":\"" + username + "\", \"project_id\":\"" + projectId + "\" }\n");
-                values.erase(values.begin());
-                info.first = now;
-            }
-        }
-
-        uploadMutex.unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
 }
 
 void CloudClientPrivate::uploadVar(const std::string &name, const std::string &value)
 {
-    uploadMutex.lock();
+    // Pick the least overloaded connection
+    int min = 0;
+    std::shared_ptr<CloudConnection> conn = nullptr;
 
-    if (uploadQueue.find(name) == uploadQueue.cend())
-        uploadQueue[name] = { TimePoint(), {} };
-
-    uploadQueue[name].second.push_back(value);
-
-    uploadMutex.unlock();
-}
-
-std::vector<std::string> CloudClientPrivate::splitStr(const std::string &str, const std::string &separator)
-{
-    int start = 0;
-    int end = str.find(separator);
-    std::vector<std::string> output;
-
-    while (end != -1) {
-        output.emplace_back(str.substr(start, end - start));
-        start = end + separator.size();
-        end = str.find(separator, start);
+    for (int i = 0; i < connections.size(); i++) {
+        if (i == 0 || connections[i]->queueSize() < min) {
+            conn = connections[i];
+            min = conn->queueSize();
+        }
     }
 
-    output.emplace_back(str.substr(start, end - start));
-    return output;
+    if (conn)
+        conn->uploadVar(name, value);
+}
+
+void CloudClientPrivate::processEvent(const std::string &name, const std::string &value)
+{
+    variables[name] = value;
+    variableSet(name, value);
 }
