@@ -47,10 +47,10 @@ void CloudClientPrivate::login()
         { "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.101 Safari/537.36" }
     };
     cpr::Body login_body{ "{ \"username\": \"" + username + "\", \"password\": \"" + password + "\" }" };
-    cpr::Response login_responce = cpr::Post(login_url, login_headers, login_body);
+    cpr::Response login_response = cpr::Post(login_url, login_headers, login_body);
 
-    if (login_responce.status_code != 200) {
-        if (login_responce.status_code == 403) {
+    if (login_response.status_code != 200) {
+        if (login_response.status_code == 403) {
             std::cerr << "Incorrect username or password!" << std::endl;
             return;
         } else {
@@ -64,10 +64,10 @@ void CloudClientPrivate::login()
     }
 
     std::smatch login_smatch;
-    std::regex_search(login_responce.raw_header, login_smatch, std::regex("\"(.*)\""));
+    std::regex_search(login_response.raw_header, login_smatch, std::regex("\"(.*)\""));
 
     sessionId = login_smatch[0];
-    xToken = nlohmann::json::parse(login_responce.text)[0]["token"];
+    xToken = nlohmann::json::parse(login_response.text)[0]["token"];
     loginSuccessful = true;
     loginAttempts = 0;
     return;
