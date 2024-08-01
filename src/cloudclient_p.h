@@ -4,6 +4,7 @@
 
 #include <unordered_map>
 #include <string>
+#include <set>
 
 #include "signal.h"
 
@@ -30,7 +31,7 @@ struct CloudClientPrivate
         int attempt = 0;
         bool loginSuccessful = false;
         bool connected = false;
-        std::vector<std::shared_ptr<CloudConnection>> connections;
+        std::set<std::shared_ptr<CloudConnection>> connections;
         std::unordered_map<std::string, std::string> variables;
         sigslot::signal<const std::string &, const std::string &> variableSet;
 };

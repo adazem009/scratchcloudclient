@@ -22,18 +22,51 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     if (!loginSuccessful)
         return;
 
-    for (int i = 0; i < connections; i++) {
-        auto conn = std::make_shared<CloudConnection>(i, username, sessionId, projectId);
+    // Create connections
+    const int threadCount = std::thread::hardware_concurrency();
+    std::mutex connectionMutex;
 
-        if (i == 0) {
+    auto f = [this, &connectionMutex, &username, &projectId](int id) {
+        auto conn = std::make_shared<CloudConnection>(id, username, sessionId, projectId);
+
+        if (id == 0) {
             // Use the first client's events
             conn->variableSet().connect(&CloudClientPrivate::processEvent, this);
         }
 
+        connectionMutex.lock();
+        this->connections.insert(conn);
+        connectionMutex.unlock();
+    };
+
+    std::vector<std::thread> threads;
+    bool done = false;
+    int i = 0;
+
+    while (true) {
+        threads.clear();
+
+        for (int j = 0; j < threadCount; j++) {
+            if (i >= connections) {
+                done = true;
+                break;
+            }
+
+            threads.push_back(std::thread(f, i));
+            i++;
+        }
+
+        for (int i = 0; i < threads.size(); i++)
+            threads[i].join();
+
+        if (done)
+            break;
+    }
+
+    // Check connection status
+    for (auto conn : this->connections) {
         if (!conn->connected())
             return;
-
-        this->connections.push_back(conn);
     }
 
     connected = true;
@@ -88,10 +121,10 @@ void CloudClientPrivate::uploadVar(const std::string &name, const std::string &v
     int min = 0;
     std::shared_ptr<CloudConnection> conn = nullptr;
 
-    for (int i = 0; i < connections.size(); i++) {
-        if (i == 0 || connections[i]->queueSize() < min) {
-            conn = connections[i];
-            min = conn->queueSize();
+    for (auto c : connections) {
+        if (!conn || c->queueSize() < min) {
+            conn = c;
+            min = c->queueSize();
         }
     }
 
