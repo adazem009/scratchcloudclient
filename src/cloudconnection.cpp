@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 #include <iostream>
 #include <ixwebsocket/IXWebSocket.h>
 #include <nlohmann/json.hpp>
