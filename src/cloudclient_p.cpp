@@ -9,6 +9,7 @@
 #include "cloudconnection.h"
 
 #define MAX_LOGIN_ATTEMPTS 32
+#define LISTEN_TIME 50
 
 using namespace scratchcloud;
 
@@ -28,11 +29,7 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
 
     auto f = [this, &connectionMutex, &username, &projectId](int id) {
         auto conn = std::make_shared<CloudConnection>(id, username, sessionId, projectId);
-
-        if (id == 0) {
-            // Use the first client's events
-            conn->variableSet().connect(&CloudClientPrivate::processEvent, this);
-        }
+        conn->variableSet().connect([conn, this](const std::string &name, const std::string &value) { processEvent(conn.get(), name, value); });
 
         connectionMutex.lock();
         this->connections.insert(conn);
@@ -67,9 +64,20 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     for (auto conn : this->connections) {
         if (!conn->connected())
             return;
+
+        receivedMessages[conn.get()] = {};
     }
 
+    listenThread = std::thread([&]() { listenToMessages(); });
     connected = true;
+}
+
+CloudClientPrivate::~CloudClientPrivate()
+{
+    stopListenThread = true;
+
+    if (listenThread.joinable())
+        listenThread.join();
 }
 
 void CloudClientPrivate::login()
@@ -132,8 +140,77 @@ void CloudClientPrivate::uploadVar(const std::string &name, const std::string &v
         conn->uploadVar(name, value);
 }
 
-void CloudClientPrivate::processEvent(const std::string &name, const std::string &value)
+void CloudClientPrivate::listenToMessages()
 {
-    variables[name] = value;
-    variableSet(name, value);
+    /*
+     * Since we're using multiple connections, messages sent by this program
+     * cannot be filtered properly. Because of this, we need to listen to
+     * messages for some time and then determine which messages should be
+     * filtered (messages sent by a client are not returned to it).
+     */
+    while (!stopListenThread) {
+        listenMutex.lock();
+
+        if (listening) {
+            auto now = std::chrono::steady_clock::now();
+            auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - listenStartTime).count();
+
+            if (delta >= LISTEN_TIME) {
+                // Create a list of distinct messages
+                std::vector<std::pair<std::string, std::string>> distinctMessages;
+
+                for (const auto &[conn, list] : receivedMessages) {
+                    for (const auto &message : list) {
+                        if (std::find(distinctMessages.begin(), distinctMessages.end(), message) == distinctMessages.end())
+                            distinctMessages.push_back(message);
+                    }
+                }
+
+                // Notify about messages which are present in the same count in all connections
+                for (const auto &message : distinctMessages) {
+                    bool skip = false;
+                    int count = -1;
+
+                    for (const auto &[conn, list] : receivedMessages) {
+                        int currentCount = std::count(list.begin(), list.end(), message);
+
+                        if ((count != -1 && currentCount != count) || currentCount == 0) {
+                            // This message should be skipped
+                            skip = true;
+                            break;
+                        }
+
+                        count = currentCount;
+                    }
+
+                    if (!skip) {
+                        variables[message.first] = message.second;
+                        variableSet(message.first, message.second);
+                    }
+                }
+
+                // Clear received messages
+                for (auto &[conn, list] : receivedMessages)
+                    list.clear();
+
+                listening = false;
+            }
+        }
+
+        listenMutex.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+}
+
+void CloudClientPrivate::processEvent(CloudConnection *connection, const std::string &name, const std::string &value)
+{
+    listenMutex.lock();
+
+    if (!listening) {
+        listening = true;
+        listenStartTime = std::chrono::steady_clock::now();
+    }
+
+    receivedMessages[connection].push_back({ name, value });
+    listenMutex.unlock();
 }
