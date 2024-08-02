@@ -73,10 +73,6 @@ void CloudConnection::connect()
     m_reconnect = false;
     m_websocket = std::make_shared<ix::WebSocket>();
     m_websocket->setUrl(m_url);
-    m_websocket->start();
-    m_websocket->stop(); // connecting 2 times improves connection time significantly
-    m_websocket = std::make_shared<ix::WebSocket>();
-    m_websocket->setUrl(m_url);
 
     // Message callback
     m_websocket->setOnMessageCallback([&](const ix::WebSocketMessagePtr &msg) {
