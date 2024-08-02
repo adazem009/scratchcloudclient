@@ -33,6 +33,11 @@ CloudConnection::~CloudConnection()
         m_loopThread.join();
 }
 
+int CloudConnection::id() const
+{
+    return m_id;
+}
+
 bool CloudConnection::connected() const
 {
     return m_connected;

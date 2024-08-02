@@ -22,6 +22,8 @@ class CloudConnection
         CloudConnection(int id, const std::string &username, const std::string &sessionId, const std::string &projectId);
         ~CloudConnection();
 
+        int id() const;
+
         bool connected() const;
 
         int queueSize() const;
