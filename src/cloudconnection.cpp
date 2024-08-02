@@ -99,10 +99,16 @@ void CloudConnection::connect()
 
                 for (int i = 0; i < response.size() - 1; i++) {
                     response[i].erase(response[i].find(u8"☁ "), 4);
-                    nlohmann::json json = nlohmann::json::parse(response[i]);
-                    std::string name = json["name"];
-                    std::string value = json["value"];
-                    m_variableSet(name, value);
+
+                    try {
+                        nlohmann::json json = nlohmann::json::parse(response[i]);
+                        std::string name = json["name"];
+                        std::string value = json["value"];
+                        m_variableSet(name, value);
+                    } catch (std::exception &e) {
+                        std::cerr << "invalid message JSON: " << response[i] << std::endl;
+                        std::cerr << e.what() << std::endl;
+                    }
                 }
                 break;
             }
