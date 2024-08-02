@@ -103,7 +103,14 @@ void CloudConnection::connect()
                     try {
                         nlohmann::json json = nlohmann::json::parse(response[i]);
                         std::string name = json["name"];
-                        std::string value = json["value"];
+                        std::string value;
+                        nlohmann::json jsonValue = json["value"];
+
+                        if (jsonValue.is_number())
+                            value = jsonValue.dump();
+                        else
+                            value = json["value"];
+
                         m_variableSet(name, value);
                     } catch (std::exception &e) {
                         std::cerr << "invalid message JSON: " << response[i] << std::endl;
