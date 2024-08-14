@@ -3,13 +3,13 @@
 #include <iostream>
 #include <regex>
 #include <cpr/cpr.h>
-#include <nlohmann/json.hpp>
 
 #include "cloudclient_p.h"
 #include "cloudconnection.h"
 
 #define MAX_LOGIN_ATTEMPTS 32
 #define LISTEN_TIME 100
+#define LOG_UPDATE_INTERVAL 100
 
 using namespace scratchcloud;
 
@@ -68,16 +68,20 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
         receivedMessages[conn.get()] = {};
     }
 
-    listenThread = std::thread([&]() { listenToMessages(); });
+    cloudLogThread = std::thread([&]() { listenToCloudLog(); });
+    wsThread = std::thread([&]() { listenToMessages(); });
     connected = true;
 }
 
 CloudClientPrivate::~CloudClientPrivate()
 {
-    stopListenThread = true;
+    stopListenThreads = true;
 
-    if (listenThread.joinable())
-        listenThread.join();
+    if (cloudLogThread.joinable())
+        cloudLogThread.join();
+
+    if (wsThread.joinable())
+        wsThread.join();
 }
 
 void CloudClientPrivate::login()
@@ -140,6 +144,24 @@ void CloudClientPrivate::uploadVar(const std::string &name, const std::string &v
         conn->uploadVar(name, value);
 }
 
+void CloudClientPrivate::listenToCloudLog()
+{
+    while (!stopListenThreads) {
+        bool firstTime = (cloudLogReadTime == 0);
+        std::vector<CloudLogRecord> log;
+        getCloudLog(log);
+        listenMutex.lock();
+
+        if (!firstTime) { // ignore events when reading for the first time (they might be outdated)
+            for (const auto &record : log)
+                notifyAboutVar(CloudClient::ListenMode::CloudLog, record.user(), record.name(), record.value());
+        }
+
+        listenMutex.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(LOG_UPDATE_INTERVAL));
+    }
+}
+
 void CloudClientPrivate::listenToMessages()
 {
     /*
@@ -148,7 +170,7 @@ void CloudClientPrivate::listenToMessages()
      * messages for some time and then determine which messages should be
      * filtered (messages sent by a client are not returned to it).
      */
-    while (!stopListenThread) {
+    while (!stopListenThreads) {
         listenMutex.lock();
         int sleepTime = 25;
 
@@ -190,14 +212,8 @@ void CloudClientPrivate::listenToMessages()
                     }
 
                     if (!skip) {
-                        const auto &name = message.first;
-                        const auto &value = message.second;
-
-                        if (variables.find(name) == variables.cend())
-                            variablesListenMode[name] = defaultListenMode;
-
-                        variables[name] = value;
-                        variableSet(name, value);
+                        // NOTE: Setter username can't be read from WS messages
+                        notifyAboutVar(CloudClient::ListenMode::Websockets, "", message.first, message.second);
                     }
                 }
 
@@ -216,6 +232,17 @@ void CloudClientPrivate::listenToMessages()
     }
 }
 
+void CloudClientPrivate::notifyAboutVar(CloudClient::ListenMode srcMode, const std::string &user, const std::string &name, const std::string &value)
+{
+    if (variables.find(name) == variables.cend())
+        variablesListenMode[name] = defaultListenMode;
+
+    if (variablesListenMode[name] == srcMode) {
+        variables[name] = value;
+        variableSet(name, value);
+    }
+}
+
 void CloudClientPrivate::processEvent(CloudConnection *connection, const std::string &name, const std::string &value)
 {
     listenMutex.lock();
@@ -227,4 +254,43 @@ void CloudClientPrivate::processEvent(CloudConnection *connection, const std::st
 
     receivedMessages[connection].push_back({ name, value });
     listenMutex.unlock();
+}
+
+void CloudClientPrivate::getCloudLog(std::vector<CloudLogRecord> &out, int limit, int offset)
+{
+    out.clear();
+
+    std::string url = "https://clouddata.scratch.mit.edu/logs?projectid=";
+    url += projectId;
+    url += "&limit=";
+    url += std::to_string(limit);
+    url += "&offset=";
+    url += std::to_string(offset);
+    cpr::Response response = cpr::Get(cpr::Url(url));
+
+    if (response.status_code == 200) {
+        try {
+            nlohmann::json json = nlohmann::json::parse(response.text);
+            long maxTimestamp = 0;
+
+            for (auto jsonRecord : json) {
+                CloudLogRecord record(jsonRecord);
+
+                if (record.type() != CloudLogRecord::Type::Invalid) {
+                    maxTimestamp = std::max(maxTimestamp, record.timestamp());
+
+                    if (record.timestamp() > cloudLogReadTime)
+                        out.push_back(record);
+                }
+            }
+
+            cloudLogReadTime = maxTimestamp;
+
+            // We want the latest record to be last
+            std::reverse(out.begin(), out.end());
+        } catch (std::exception &e) {
+            std::cerr << "invalid cloud log: " << response.text << std::endl;
+        }
+    } else
+        std::cerr << "failed to get cloud log: " << response.status_code << std::endl;
 }
