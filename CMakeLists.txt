@@ -13,6 +13,7 @@ add_library(scratchcloudclient SHARED
   ${INCLUDE_DIR}/spimpl.h
   ${INCLUDE_DIR}/signal.h
   ${INCLUDE_DIR}/cloudclient.h
+  ${INCLUDE_DIR}/cloudevent.h
 )
 
 target_sources(scratchcloudclient
@@ -24,6 +25,9 @@ target_sources(scratchcloudclient
     src/cloudconnection.h
     src/cloudlogrecord.cpp
     src/cloudlogrecord.h
+    src/cloudevent.cpp
+    src/cloudevent_p.cpp
+    src/cloudevent_p.h
 )
 
 target_compile_definitions(scratchcloudclient PRIVATE SCRATCHCLOUDCLIENT_LIBRARY)
