@@ -22,6 +22,8 @@ target_sources(scratchcloudclient
     src/cloudclient_p.h
     src/cloudconnection.cpp
     src/cloudconnection.h
+    src/cloudlogrecord.cpp
+    src/cloudlogrecord.h
 )
 
 target_compile_definitions(scratchcloudclient PRIVATE SCRATCHCLOUDCLIENT_LIBRARY)
