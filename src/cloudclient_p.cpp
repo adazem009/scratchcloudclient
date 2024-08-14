@@ -6,6 +6,7 @@
 
 #include "cloudclient_p.h"
 #include "cloudconnection.h"
+#include "cloudevent.h"
 
 #define MAX_LOGIN_ATTEMPTS 32
 #define LISTEN_TIME 100
@@ -239,7 +240,8 @@ void CloudClientPrivate::notifyAboutVar(CloudClient::ListenMode srcMode, const s
 
     if (variablesListenMode[name] == srcMode) {
         variables[name] = value;
-        variableSet(name, value);
+        CloudEvent event(srcMode, user, name, value);
+        variableSet(event);
     }
 }
 

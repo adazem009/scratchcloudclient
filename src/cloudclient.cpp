@@ -92,7 +92,7 @@ void CloudClient::setVariableListenMode(const std::string &name, ListenMode mode
 }
 
 /*! Emits when a variable was set by another user. */
-sigslot::signal<const std::string &, const std::string &> &CloudClient::variableSet()
+sigslot::signal<const CloudEvent &> &CloudClient::variableSet()
 {
     return impl->variableSet;
 }

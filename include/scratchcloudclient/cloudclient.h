@@ -11,6 +11,7 @@
 namespace scratchcloud
 {
 
+class CloudEvent;
 class CloudClientPrivate;
 
 /*! \brief The CloudClient class provides a simple API for Scratch cloud data. */
@@ -36,7 +37,7 @@ class SCRATCHCLOUDCLIENT_EXPORT CloudClient
         void setListenMode(ListenMode newMode);
         void setVariableListenMode(const std::string &name, ListenMode mode);
 
-        sigslot::signal<const std::string &, const std::string &> &variableSet();
+        sigslot::signal<const CloudEvent &> &variableSet();
 
     private:
         spimpl::unique_impl_ptr<CloudClientPrivate> impl;

@@ -53,7 +53,7 @@ struct CloudClientPrivate
         std::thread wsThread;
         std::mutex listenMutex;
         std::atomic<bool> stopListenThreads = false;
-        sigslot::signal<const std::string &, const std::string &> variableSet;
+        sigslot::signal<const CloudEvent &> variableSet;
 };
 
 } // namespace scratchcloud
