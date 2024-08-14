@@ -7,7 +7,7 @@ Based on [Cpp-ScratchClient](https://github.com/nini2009ph/Cpp-ScratchClient) by
 Using FetchContent:
 ```cmake
 include(FetchContent)
-FetchContent_Declare(cloudclient GIT_REPOSITORY https://github.com/adazem009/scratchcloudclient.git GIT_TAG d90d623632e690954ba893a4af2b86b69656d044)
+FetchContent_Declare(cloudclient GIT_REPOSITORY https://github.com/adazem009/scratchcloudclient.git GIT_TAG f1395abbd26b5dd308a83f4296f50700ee4256f5)
 FetchContent_MakeAvailable(cloudclient)
 target_link_libraries(MyApp PRIVATE scratchcloudclient)
 ```
