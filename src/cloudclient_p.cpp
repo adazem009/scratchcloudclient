@@ -9,7 +9,7 @@
 #include "cloudconnection.h"
 
 #define MAX_LOGIN_ATTEMPTS 32
-#define LISTEN_TIME 50
+#define LISTEN_TIME 100
 
 using namespace scratchcloud;
 
