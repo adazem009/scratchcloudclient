@@ -49,6 +49,7 @@ struct CloudClientPrivate
         long cloudLogReadTime = 0;
         TimePoint listenStartTime;
         std::atomic<bool> listening = false;
+        TimePoint lastWsActivity;
         std::thread cloudLogThread;
         std::thread wsThread;
         std::mutex listenMutex;

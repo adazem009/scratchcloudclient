@@ -11,6 +11,7 @@
 #define MAX_LOGIN_ATTEMPTS 32
 #define LISTEN_TIME 100
 #define LOG_UPDATE_INTERVAL 100
+#define LOG_IDLE_TIMEOUT 30000
 
 using namespace scratchcloud;
 
@@ -147,18 +148,28 @@ void CloudClientPrivate::uploadVar(const std::string &name, const std::string &v
 
 void CloudClientPrivate::listenToCloudLog()
 {
-    while (!stopListenThreads) {
-        bool firstTime = (cloudLogReadTime == 0);
-        std::vector<CloudLogRecord> log;
-        getCloudLog(log);
-        listenMutex.lock();
+    // Get initial log to avoid notifying about outdated events
+    std::vector<CloudLogRecord> log;
+    getCloudLog(log);
 
-        if (!firstTime) { // ignore events when reading for the first time (they might be outdated)
+    while (!stopListenThreads) {
+        listenMutex.lock();
+        auto now = std::chrono::steady_clock::now();
+        auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWsActivity).count();
+        listenMutex.unlock();
+
+        // Do not fetch log if there haven't been any WS messages recently
+        if (delta < LOG_IDLE_TIMEOUT) {
+            std::vector<CloudLogRecord> log;
+            getCloudLog(log);
+            listenMutex.lock();
+
             for (const auto &record : log)
                 notifyAboutVar(CloudClient::ListenMode::CloudLog, record.user(), record.name(), record.value());
+
+            listenMutex.unlock();
         }
 
-        listenMutex.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(LOG_UPDATE_INTERVAL));
     }
 }
@@ -215,6 +226,10 @@ void CloudClientPrivate::listenToMessages()
                     if (!skip) {
                         // NOTE: Setter username can't be read from WS messages
                         notifyAboutVar(CloudClient::ListenMode::Websockets, "", message.first, message.second);
+
+                        // If this variable uses CloudLog mode, set last activity time
+                        if (variablesListenMode[message.first] == CloudClient::ListenMode::CloudLog)
+                            lastWsActivity = std::chrono::steady_clock::now();
                     }
                 }
 
