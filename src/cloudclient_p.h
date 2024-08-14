@@ -5,10 +5,10 @@
 #include <unordered_map>
 #include <string>
 #include <set>
-#include <scratchcloudclient/cloudclient.h>
 
 #include "signal.h"
 #include "cloudlogrecord.h"
+#include "cloudclient.h"
 
 namespace scratchcloud
 {
