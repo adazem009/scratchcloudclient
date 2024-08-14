@@ -156,14 +156,19 @@ void CloudClientPrivate::listenToMessages()
             auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - listenStartTime).count();
 
             if (delta >= LISTEN_TIME) {
-                // Create a list of distinct messages
+                // Create a list of distinct messages (duplicate messages in a single connection are allowed)
                 std::vector<std::pair<std::string, std::string>> distinctMessages;
 
                 for (const auto &[conn, list] : receivedMessages) {
+                    std::vector<std::pair<std::string, std::string>> newMessages;
+
                     for (const auto &message : list) {
                         if (std::find(distinctMessages.begin(), distinctMessages.end(), message) == distinctMessages.end())
-                            distinctMessages.push_back(message);
+                            newMessages.push_back(message);
                     }
+
+                    for (const auto &message : newMessages)
+                        distinctMessages.push_back(message);
                 }
 
                 // Notify about messages which are present in the same count in all connections
