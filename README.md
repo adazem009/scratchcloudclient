@@ -40,8 +40,8 @@ int main() {
     std::cout << client.getVariable("var2") << std::endl;
 
     // Event (when a variable is changed by another user)
-    client.variableSet().connect([](const std::string& name, const std::string& value) {
-        std::cout << name << " = " << value << std::endl;
+    client.variableSet().connect([](const CloudEvent &event) {
+        std::cout << event.user() << ": " << event.name() << " = " << event.value() << std::endl;
     });
 
     getc(stdin); // press enter/return to stop
@@ -56,3 +56,16 @@ You can pass the amount of them to the constructor. The default is **10**.
 ```cpp
 CloudClient client("username", "password", "526557379", 4);
 ```
+
+# Listen modes
+There are 2 listen modes: **CloudLog** and **Websockets**
+The default is **CloudLog** which is based on fetching cloud logs using Scratch API.
+The advantage of this mode is that it allows you to read who set the cloud variable.
+However, it's pretty slow compared to the **Websockets** mode which is real time.
+
+The **WebSockets** mode is based on listening to Websockets messages just like
+a regular Scratch client does. It's good for multiplayer games, but it doesn't
+support reading who set the cloud variable.
+
+You will probably need both modes in advanced projects. Because of that, it's possible
+to set different mode for each variable.
