@@ -150,6 +150,7 @@ void CloudClientPrivate::listenToMessages()
      */
     while (!stopListenThread) {
         listenMutex.lock();
+        int sleepTime = 25;
 
         if (listening) {
             auto now = std::chrono::steady_clock::now();
@@ -199,11 +200,13 @@ void CloudClientPrivate::listenToMessages()
                     list.clear();
 
                 listening = false;
+                delta = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now).count();
+                sleepTime = std::max(0L, sleepTime - delta);
             }
         }
 
         listenMutex.unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
     }
 }
 
