@@ -17,6 +17,12 @@ class CloudClientPrivate;
 class SCRATCHCLOUDCLIENT_EXPORT CloudClient
 {
     public:
+        enum class ListenMode
+        {
+            CloudLog,  /*!< (Default) Uses Scratch API to read the cloud log. It's slower, but makes it possible to read the variable setter username. */
+            Websockets /*!< Listens to messages using Websockets. Good for multiplayer games because it's real time, but you won't be able to read the setter username. */
+        };
+
         CloudClient(const std::string &username, const std::string &password, const std::string &projectId, int connections = 10);
         CloudClient(const CloudClient &) = delete;
 
@@ -26,6 +32,9 @@ class SCRATCHCLOUDCLIENT_EXPORT CloudClient
         const std::string &getVariable(const std::string &name) const;
         void setVariable(const std::string &name, const std::string &value);
         void waitForUpload();
+
+        void setListenMode(ListenMode newMode);
+        void setVariableListenMode(const std::string &name, ListenMode mode);
 
         sigslot::signal<const std::string &, const std::string &> &variableSet();
 

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <string>
 #include <set>
+#include <scratchcloudclient/cloudclient.h>
 
 #include "signal.h"
 
@@ -37,6 +38,7 @@ struct CloudClientPrivate
         bool connected = false;
         std::set<std::shared_ptr<CloudConnection>> connections;
         std::unordered_map<std::string, std::string> variables;
+        std::unordered_map<std::string, CloudClient::ListenMode> variablesListenMode;
         std::unordered_map<CloudConnection *, std::vector<std::pair<std::string, std::string>>> receivedMessages;
         TimePoint listenStartTime;
         std::atomic<bool> listening = false;

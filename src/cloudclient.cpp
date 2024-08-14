@@ -72,6 +72,25 @@ void CloudClient::waitForUpload()
     }
 }
 
+/*! Sets the listen mode of all variables. */
+void CloudClient::setListenMode(ListenMode newMode)
+{
+    impl->defaultListenMode = newMode;
+
+    for (auto &[name, mode] : impl->variablesListenMode)
+        mode = newMode;
+}
+
+void CloudClient::setVariableListenMode(const std::string &name, ListenMode mode)
+{
+    auto it = impl->variablesListenMode.find(name);
+
+    if (it == impl->variablesListenMode.cend())
+        std::cout << "variable " << name << " not found in project, but setting listen mode anyway" << std::endl;
+
+    impl->variablesListenMode[name] = mode;
+}
+
 /*! Emits when a variable was set by another user. */
 sigslot::signal<const std::string &, const std::string &> &CloudClient::variableSet()
 {

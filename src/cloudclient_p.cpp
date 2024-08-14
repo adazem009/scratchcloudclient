@@ -190,8 +190,14 @@ void CloudClientPrivate::listenToMessages()
                     }
 
                     if (!skip) {
-                        variables[message.first] = message.second;
-                        variableSet(message.first, message.second);
+                        const auto &name = message.first;
+                        const auto &value = message.second;
+
+                        if (variables.find(name) == variables.cend())
+                            variablesListenMode[name] = defaultListenMode;
+
+                        variables[name] = value;
+                        variableSet(name, value);
                     }
                 }
 
