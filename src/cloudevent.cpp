@@ -14,9 +14,11 @@ CloudEvent::CloudEvent(CloudClient::ListenMode listenMode, const std::string &us
 
 const std::string &CloudEvent::user() const
 {
-    if (impl->listenMode == CloudClient::ListenMode::Websockets)
+    if (impl->listenMode == CloudClient::ListenMode::Websockets) {
         std::cerr << "Websockets mode doesn't support reading setter username! Use the CloudLog mode instead." << std::endl;
-    else
+        static const std::string empty;
+        return empty;
+    } else
         return impl->user;
 }
 
