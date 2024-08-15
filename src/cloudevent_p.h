@@ -12,9 +12,9 @@ struct CloudEventPrivate
         CloudEventPrivate(CloudClient::ListenMode listenMode, const std::string &user, const std::string &name, const std::string &value);
 
         CloudClient::ListenMode listenMode = CloudClient::ListenMode::CloudLog;
-        const std::string &user;
-        const std::string &name;
-        const std::string &value;
+        std::string user;
+        std::string name;
+        std::string value;
 };
 
 } // namespace scratchcloud
