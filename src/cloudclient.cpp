@@ -45,8 +45,10 @@ void CloudClient::setVariable(const std::string &name, const std::string &value)
 {
     auto it = impl->variables.find(name);
 
-    if (it == impl->variables.cend())
+    if (it == impl->variables.cend()) {
         std::cout << "variable " << name << " not found in project, but setting anyway" << std::endl;
+        impl->variablesListenMode[name] = impl->defaultListenMode;
+    }
 
     impl->variables[name] = value;
     impl->uploadVar(name, value);
