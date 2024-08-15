@@ -75,7 +75,6 @@ void CloudConnection::connect()
 
     m_attempt++;
     assert(m_attempt <= MAX_ATTEMPTS);
-    std::cout << m_id << ": connecting to " << m_url << " (attempt " << m_attempt << " of " << MAX_ATTEMPTS << ")" << std::endl;
     m_responseReceived = false;
     m_reconnect = false;
     m_websocket = std::make_shared<ix::WebSocket>();
@@ -87,7 +86,6 @@ void CloudConnection::connect()
             case ix::WebSocketMessageType::Close:
                 // Connection lost
                 if (m_connected) {
-                    std::cout << m_id << ": connection lost!" << std::endl;
                     m_connected = false;
                     m_reconnect = true;
                     break;
@@ -144,8 +142,6 @@ void CloudConnection::connect()
 
     if (!result.success) {
         // Failure
-        std::cerr << m_id << ": failed to connect: " << result.errorStr;
-        std::cerr << m_id << ": reconnecting..." << std::endl;
         connect();
         return;
     }
@@ -163,7 +159,6 @@ void CloudConnection::connect()
         auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
 
         if (delta > RESPONSE_TIMEOUT) {
-            std::cout << m_id << ": didn't receive response, reconnecting..." << std::endl;
             m_websocket->close();
             connect();
             return;
@@ -181,7 +176,6 @@ void CloudConnection::uploadLoop()
         if (m_reconnect) {
             // Since we're reconnecting, we don't need to read the list of variables again
             m_ignoreNextMessage = true;
-            std::cout << m_id << ": reconnecting..." << std::endl;
             m_attempt = 0;
             m_websocket->close();
             connect();

@@ -30,6 +30,7 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     std::mutex connectionMutex;
 
     auto f = [this, &connectionMutex, &username, &projectId](int id) {
+        std::cout << id << ": connecting..." << std::endl;
         auto conn = std::make_shared<CloudConnection>(id, username, sessionId, projectId);
         conn->variableSet().connect([conn, this](const std::string &name, const std::string &value) { processEvent(conn.get(), name, value); });
 
@@ -73,6 +74,7 @@ CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::s
     cloudLogThread = std::thread([&]() { listenToCloudLog(); });
     wsThread = std::thread([&]() { listenToMessages(); });
     connected = true;
+    std::cout << "connected!" << std::endl;
 }
 
 CloudClientPrivate::~CloudClientPrivate()
