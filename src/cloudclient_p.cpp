@@ -12,69 +12,20 @@
 #define LISTEN_TIME 100
 #define LOG_UPDATE_INTERVAL 100
 #define LOG_IDLE_TIMEOUT 30000
+#define IDLE_RECONNECT_TIMEOUT 7200000 // 2 hours
 
 using namespace scratchcloud;
 
 CloudClientPrivate::CloudClientPrivate(const std::string &username, const std::string &password, const std::string &projectId, int connections) :
     username(username),
     password(password),
-    projectId(projectId)
+    projectId(projectId),
+    connectionCount(connections)
 {
     login();
 
-    if (!loginSuccessful)
-        return;
-
-    // Create connections
-    const int threadCount = std::thread::hardware_concurrency();
-    std::mutex connectionMutex;
-
-    auto f = [this, &connectionMutex, &username, &projectId](int id) {
-        std::cout << id << ": connecting..." << std::endl;
-        auto conn = std::make_shared<CloudConnection>(id, username, sessionId, projectId);
-        conn->variableSet().connect([conn, this](const std::string &name, const std::string &value) { processEvent(conn.get(), name, value); });
-
-        connectionMutex.lock();
-        this->connections.insert(conn);
-        connectionMutex.unlock();
-    };
-
-    std::vector<std::thread> threads;
-    bool done = false;
-    int i = 0;
-
-    while (true) {
-        threads.clear();
-
-        for (int j = 0; j < threadCount; j++) {
-            if (i >= connections) {
-                done = true;
-                break;
-            }
-
-            threads.push_back(std::thread(f, i));
-            i++;
-        }
-
-        for (int i = 0; i < threads.size(); i++)
-            threads[i].join();
-
-        if (done)
-            break;
-    }
-
-    // Check connection status
-    for (auto conn : this->connections) {
-        if (!conn->connected())
-            return;
-
-        receivedMessages[conn.get()] = {};
-    }
-
-    cloudLogThread = std::thread([&]() { listenToCloudLog(); });
-    wsThread = std::thread([&]() { listenToMessages(); });
-    connected = true;
-    std::cout << "connected!" << std::endl;
+    if (loginSuccessful)
+        connect();
 }
 
 CloudClientPrivate::~CloudClientPrivate()
@@ -88,14 +39,13 @@ CloudClientPrivate::~CloudClientPrivate()
         wsThread.join();
 }
 
-void CloudClientPrivate::login()
+void CloudClientPrivate::login(int attempt)
 {
-    if (attempt >= MAX_LOGIN_ATTEMPTS) {
+    if (attempt > MAX_LOGIN_ATTEMPTS) {
         std::cerr << "failed to log in after " << attempt << " attempts!" << std::endl;
         return;
     }
 
-    attempt++;
     assert(attempt <= MAX_LOGIN_ATTEMPTS);
     std::cout << "attempting to log in... (attempt " << attempt << " of " << MAX_LOGIN_ATTEMPTS << ")" << std::endl;
     loginSuccessful = false;
@@ -115,7 +65,7 @@ void CloudClientPrivate::login()
             std::cerr << "Incorrect username or password!" << std::endl;
             return;
         } else {
-            login();
+            login(attempt + 1);
             return;
         }
     }
@@ -126,9 +76,83 @@ void CloudClientPrivate::login()
     sessionId = login_smatch[0];
     xToken = nlohmann::json::parse(login_response.text)[0]["token"];
     loginSuccessful = true;
-    attempt = 0;
     std::cout << "success!" << std::endl;
     return;
+}
+
+void CloudClientPrivate::connect() {
+    // Stop running threads
+    stopListenThreads = true;
+
+    if (cloudLogThread.joinable())
+        cloudLogThread.join();
+
+    if (wsThread.joinable())
+        wsThread.join();
+
+    stopListenThreads = false;
+
+    // Create connections
+    const int threadCount = std::thread::hardware_concurrency();
+    std::mutex connectionMutex;
+    connections.clear();
+
+    auto f = [this, &connectionMutex](int id) {
+        std::cout << id << ": connecting..." << std::endl;
+        auto conn = std::make_shared<CloudConnection>(id, username, sessionId, projectId);
+        conn->variableSet().connect([conn, this](const std::string &name, const std::string &value) { processEvent(conn.get(), name, value); });
+
+        connectionMutex.lock();
+        connections.insert(conn);
+        connectionMutex.unlock();
+    };
+
+    std::vector<std::thread> threads;
+    bool done = false;
+    int i = 0;
+
+    while (true) {
+        threads.clear();
+
+        for (int j = 0; j < threadCount; j++) {
+            if (i >= connectionCount) {
+                done = true;
+                break;
+            }
+
+            threads.push_back(std::thread(f, i));
+            i++;
+        }
+
+        for (int i = 0; i < threads.size(); i++)
+            threads[i].join();
+
+        if (done)
+            break;
+    }
+
+    // Check connection status
+    for (auto conn : connections) {
+        if (!conn->connected())
+            return;
+
+        receivedMessages[conn.get()] = {};
+    }
+
+    cloudLogThread = std::thread([&]() { listenToCloudLog(); });
+    wsThread = std::thread([&]() { listenToMessages(); });
+    connected = true;
+    std::cout << "connected!" << std::endl;
+}
+
+void CloudClientPrivate::reconnect() {
+    do {
+        login();
+    } while (!loginSuccessful);
+
+    do {
+        connect();
+    } while (!connected);
 }
 
 void CloudClientPrivate::uploadVar(const std::string &name, const std::string &value)
@@ -144,8 +168,13 @@ void CloudClientPrivate::uploadVar(const std::string &name, const std::string &v
         }
     }
 
-    if (conn)
+    if (conn) {
         conn->uploadVar(name, value);
+
+        listenMutex.lock();
+        lastUpload = std::chrono::steady_clock::now();
+        listenMutex.unlock();
+    }
 }
 
 void CloudClientPrivate::listenToCloudLog()
@@ -184,6 +213,9 @@ void CloudClientPrivate::listenToMessages()
      * messages for some time and then determine which messages should be
      * filtered (messages sent by a client are not returned to it).
      */
+    lastWsActivity = std::chrono::steady_clock::now();
+    lastUpload = lastWsActivity;
+
     while (!stopListenThreads) {
         listenMutex.lock();
         int sleepTime = 25;
@@ -228,10 +260,7 @@ void CloudClientPrivate::listenToMessages()
                     if (!skip) {
                         // NOTE: Setter username can't be read from WS messages
                         notifyAboutVar(CloudClient::ListenMode::Websockets, "", message.first, message.second);
-
-                        // If this variable uses CloudLog mode, set last activity time
-                        if (variablesListenMode[message.first] == CloudClient::ListenMode::CloudLog)
-                            lastWsActivity = std::chrono::steady_clock::now();
+                        lastWsActivity = std::chrono::steady_clock::now();
                     }
                 }
 
@@ -247,6 +276,19 @@ void CloudClientPrivate::listenToMessages()
 
         listenMutex.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
+
+        auto now = std::chrono::steady_clock::now();
+        auto listenIdleTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWsActivity).count();
+        auto uploadIdleTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpload).count();
+
+
+        if (listenIdleTime >= IDLE_RECONNECT_TIMEOUT && uploadIdleTime >= IDLE_RECONNECT_TIMEOUT) {
+            if (reconnectThread.joinable())
+                reconnectThread.join();
+
+            reconnectThread = std::thread([&]() { reconnect(); });
+            break;
+        }
     }
 }
 

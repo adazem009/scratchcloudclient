@@ -23,7 +23,9 @@ struct CloudClientPrivate
         CloudClientPrivate(const CloudClientPrivate &) = delete;
         ~CloudClientPrivate();
 
-        void login();
+        void login(int attempt = 1);
+        void connect();
+        void reconnect();
 
         void uploadVar(const std::string &name, const std::string &value);
         void listenToCloudLog();
@@ -38,7 +40,7 @@ struct CloudClientPrivate
         std::string sessionId;
         std::string xToken;
         std::string projectId;
-        int attempt = 0;
+        int connectionCount = 0;
         bool loginSuccessful = false;
         bool connected = false;
         std::set<std::shared_ptr<CloudConnection>> connections;
@@ -50,8 +52,10 @@ struct CloudClientPrivate
         TimePoint listenStartTime;
         std::atomic<bool> listening = false;
         TimePoint lastWsActivity;
+        TimePoint lastUpload;
         std::thread cloudLogThread;
         std::thread wsThread;
+        std::thread reconnectThread;
         std::mutex listenMutex;
         std::atomic<bool> stopListenThreads = false;
         sigslot::signal<const CloudEvent &> variableSet;
